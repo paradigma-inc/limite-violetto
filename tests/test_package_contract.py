@@ -209,9 +209,8 @@ def test_public_identity_and_entry_point() -> None:
     metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
     assert metadata["project"]["name"] == "limite-vllm"
     assert metadata["project"]["requires-python"] == "~=3.12.0"
-    assert metadata["project"]["dependencies"] == [
-        "transformers>=5.6.2,<=5.14.1"
-    ]
+    assert metadata["project"]["dependencies"] == []
+    assert "transformers==5.6.2" in metadata["dependency-groups"]["dev"]
     assert metadata["project"]["entry-points"]["vllm.general_plugins"] == {
         "limite": "limite_vllm.register:register"
     }
@@ -254,6 +253,19 @@ def test_plugin_registration_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> N
     architecture, model = Registry.registrations[0]
     assert architecture == "LimiteForCausalLM"
     assert model.__name__ == "LimiteForCausalLM"
+
+
+def test_vllm_version_guard_accepts_build_suffixes_and_rejects_other_releases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from limite_vllm import register
+
+    monkeypatch.setattr(register, "package_version", lambda _name: "0.26.0+cu129")
+    register._validate_vllm_version()
+
+    monkeypatch.setattr(register, "package_version", lambda _name: "0.27.0")
+    with pytest.raises(RuntimeError, match=r"supports vLLM 0\.26\.0; found 0\.27\.0"):
+        register._validate_vllm_version()
 
 
 def test_configuration_is_self_contained_and_uses_limite_identity() -> None:

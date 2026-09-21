@@ -12,10 +12,32 @@ string, so without it a Limite checkpoint fails at `ModelConfig` construction
 with a misleading "Transformers does not recognize this architecture".
 """
 
+from importlib.metadata import PackageNotFoundError, version as package_version
+
 from limite_vllm.contract import ARCHITECTURE, MODEL_TYPE
+
+TARGET_VLLM_VERSION = "0.26.0"
+
+
+def _validate_vllm_version() -> None:
+    """Fail clearly before importing version-specific vLLM internals."""
+    try:
+        installed = package_version("vllm")
+    except PackageNotFoundError:
+        # Importing vLLM below will provide the standard missing-package error.
+        return
+
+    base_version = installed.split("+", 1)[0]
+    if base_version != TARGET_VLLM_VERSION:
+        raise RuntimeError(
+            f"limite-vllm 0.1.0 supports vLLM {TARGET_VLLM_VERSION}; "
+            f"found {installed}. Install the plugin in a compatible vLLM environment."
+        )
 
 
 def register() -> None:
+    _validate_vllm_version()
+
     from transformers import AutoConfig
     from vllm import ModelRegistry
 

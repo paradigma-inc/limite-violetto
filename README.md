@@ -5,15 +5,19 @@ repository contains serving code only: model weights, tokenizer assets, and the
 Transformers implementation are distributed separately through the model
 repository.
 
-## Compatibility
+## Requirements
 
-The current compatibility target is vLLM `0.26.0`. Production environments
-should pin that exact version until CI covers a wider range. vLLM is
-deliberately not a package dependency because deployment images own CUDA,
-PyTorch, and vLLM as one tested stack.
+- Python `3.12`
+- vLLM `0.26.0`
+- A CUDA and PyTorch stack supported by that vLLM installation
+- A Limite model repository containing the weights, tokenizer, and configuration
 
-The plugin is pure Python and requires Python 3.12. It uses the Transformers
-configuration API already present in a vLLM environment.
+Install vLLM following its platform-specific instructions before installing
+this plugin. The plugin deliberately declares no runtime dependencies: it does
+not install or upgrade CUDA, PyTorch, vLLM, or Transformers. Those packages are
+owned by the serving environment and must be tested as one stack. The plugin
+fails at startup with a clear message when the installed vLLM release is not
+`0.26.0`; local build suffixes such as `0.26.0+cu129` are accepted.
 
 ## Installation
 
@@ -23,6 +27,10 @@ Install a tagged release directly from GitHub:
 python -m pip install \
   "limite-vllm @ git+https://github.com/paradigma-inc/limite-violetto.git@v0.1.0"
 ```
+
+This installs only the lightweight Limite plugin into the active vLLM
+environment. It does not download model weights; vLLM retrieves them from the
+model repository when serving starts.
 
 For local development:
 
