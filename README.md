@@ -32,6 +32,16 @@ This installs only the lightweight Limite plugin into the active vLLM
 environment. It does not download model weights; vLLM retrieves them from the
 model repository when serving starts.
 
+## Models
+
+Hugging Face organization: [`paradigma-inc`](https://huggingface.co/paradigma-inc)
+
+Available model names:
+
+- `limite-1b-base`
+- `limite-1b-base-soup`
+- `limite-1b-violetto`
+
 For local development:
 
 ```bash
@@ -47,8 +57,10 @@ After installing the plugin into an environment that provides a compatible
 vLLM build:
 
 ```bash
-VLLM_PLUGINS=limite vllm serve <organization>/<model>
+VLLM_PLUGINS=limite vllm serve paradigma-inc/<model>
 ```
+
+Replace `<model>` with one of the model names listed above.
 
 The model repository must provide the weights and tokenizer, and its
 `config.json` must contain:
