@@ -98,7 +98,7 @@ uv run ruff check .
 uv build
 ```
 
-The implementation lives in `src/limite_vllm`. See [PROVENANCE.md](https://github.com/paradigma-inc/limite-violetto/blob/main/PROVENANCE.md) for the extraction history.
+The implementation lives in `src/limite_vllm`.
 
 ## Code license
 
