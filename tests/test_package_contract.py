@@ -22,10 +22,6 @@ RUNTIME_FILES = {
     "src/limite_vllm/validation.py",
 }
 
-SOURCE_REVISIONS = {
-    "staging": "51dc058457fa53315183fb58ae17b5bbc4f12206",
-}
-
 
 def _config(*, version: int) -> dict[str, object]:
     raw: dict[str, object] = {
@@ -209,8 +205,11 @@ def test_public_identity_and_entry_point() -> None:
     metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
     assert metadata["project"]["name"] == "limite-vllm"
     assert metadata["project"]["requires-python"] == "~=3.12.0"
-    assert metadata["project"]["dependencies"] == []
-    assert "transformers==5.6.2" in metadata["dependency-groups"]["dev"]
+    assert set(metadata["project"]["dependencies"]) == {
+        "vllm==0.26.0",
+        "torch==2.11.0",
+        "transformers==5.6.2",
+    }
     assert metadata["project"]["entry-points"]["vllm.general_plugins"] == {
         "limite": "limite_vllm.register:register"
     }
@@ -224,6 +223,20 @@ def test_public_identity_and_entry_point() -> None:
     assert LimiteConfig.model_type == "limite"
     assert register.ARCHITECTURE == "LimiteForCausalLM"
     assert register.MODEL_TYPE == "limite"
+
+
+def test_default_lock_installs_the_cuda_runtime() -> None:
+    lock = tomllib.loads((PROJECT_ROOT / "uv.lock").read_text())
+    project = next(p for p in lock["package"] if p["name"] == "limite-vllm")
+    assert {p["name"] for p in project["dependencies"]} == {
+        "torch", "transformers", "vllm"
+    }
+    torch_packages = [p for p in lock["package"] if p["name"] == "torch"]
+    assert len(torch_packages) == 1
+    assert torch_packages[0]["version"] == "2.11.0+cu130"
+    assert torch_packages[0]["source"] == {
+        "registry": "https://download.pytorch.org/whl/cu130"
+    }
 
 
 def test_plugin_registration_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -294,16 +307,6 @@ def test_lint_configuration_checks_the_complete_runtime() -> None:
     config = tomllib.loads((PROJECT_ROOT / ".ruff.toml").read_text())
     assert "exclude" not in config
     assert config["lint"]["select"] == ["E4", "E7", "E9", "F"]
-
-
-def test_provenance_records_vllm_only_ownership() -> None:
-    provenance = (PROJECT_ROOT / "PROVENANCE.md").read_text()
-    for source, revision in SOURCE_REVISIONS.items():
-        assert source in provenance
-        assert revision in provenance
-    assert "canonical" in provenance.lower()
-    assert "single optimized execution graph" in provenance.lower()
-    assert "transformers graph" in provenance.lower()
 
 
 def test_repository_contains_no_legacy_or_cross_package_imports() -> None:

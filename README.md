@@ -18,28 +18,38 @@
 
 ## Quickstart
 
-**Python 3.12 · vLLM 0.26.0 · Limite plugin v0.1.0**
+**Full installation (recommended).** No extras or manual version selection are required.
 
-Use a Python 3.12 project with vLLM 0.26.0 and a compatible CUDA/PyTorch stack. Add the plugin to that project:
+**Python 3.12 · vLLM 0.26.0 · PyTorch 2.11.0 (CUDA 13.0) · Transformers 5.6.2**
+
+On Linux x86-64 with an NVIDIA GPU and a CUDA 13.0-compatible NVIDIA driver,
+install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
 
 ```bash
-uv add "limite-vllm @ git+https://github.com/paradigma-inc/limite-violetto.git@v0.1.0"
+git clone https://github.com/paradigma-inc/limite-violetto.git
+cd limite-violetto
+uv sync --locked
 ```
 
-The plugin does not install vLLM or manage the CUDA/PyTorch stack.
+The default installation includes the plugin, vLLM, CUDA-enabled PyTorch, Transformers,
+and their locked dependencies. The repository selects the PyTorch CUDA 13.0
+wheel index automatically; no separate PyTorch or CUDA toolkit installation is
+needed. The NVIDIA driver must already be installed on the host.
+
+Model weights are downloaded from Hugging Face on first use.
 
 ## Serving
 
-With the plugin installed in the compatible vLLM environment, start Violetto:
+From the same directory, start Violetto:
 
 ```bash
-VLLM_PLUGINS=limite uv run vllm serve paradigma-inc/limite-1b-violetto
+VLLM_PLUGINS=limite uv run --locked vllm serve paradigma-inc/limite-1b-violetto
 ```
 
-For other Limite checkpoints, the general serving command is:
+For other Limite checkpoints, use:
 
 ```bash
-VLLM_PLUGINS=limite vllm serve paradigma-inc/<model>
+VLLM_PLUGINS=limite uv run --locked vllm serve paradigma-inc/<model>
 ```
 
 Replace `<model>` with `limite-1b-base`, `limite-1b-base-soup`, or `limite-1b-violetto`.
@@ -56,6 +66,28 @@ Model repositories must include weights and tokenizer assets. Their `config.json
 The remaining architecture fields are also required and checked before the inference graph is constructed. The plugin registers `LimiteConfig` itself, so serving does not require another source checkout or the native Transformers implementation. The current implementation requires tensor and pipeline parallel sizes of one.
 
 Send the mathematical problem as a user message and use the checkpoint's bundled chat template to apply the model's mathematical prompt.
+
+### Install only the plugin
+
+If you already manage a Python 3.12 environment with vLLM 0.26.0 and its
+compatible GPU stack, build the plugin wheel from this checkout and install it
+without resolving dependencies. Activate that environment first so `python` and
+`vllm` refer to its executables:
+
+```bash
+uv build --wheel
+python -m pip install --no-deps --force-reinstall dist/limite_vllm-0.1.0-py3-none-any.whl
+VLLM_PLUGINS=limite vllm serve paradigma-inc/limite-1b-violetto
+```
+
+`--no-deps` preserves the installed runtime dependencies; you are responsible
+for their compatibility. The verified versions are listed above. Building a
+wheel does not install the runtime. Avoid `uv sync` in this checkout when using
+this path, since it manages the complete runtime described in the quickstart.
+
+The CUDA wheel source and lockfile are repository-level uv settings, not wheel
+metadata; installing the package as a dependency of another project does not
+inherit them.
 
 ## About the model
 
@@ -91,11 +123,18 @@ Violetto is built around mathematical reasoning, with deliberately light instruc
 ## Plugin development
 
 ```bash
-uv sync --group dev
-uv run pytest
-uv run ruff check .
+uv sync --locked --group dev
+uv run --no-sync pytest
+uv run --no-sync ruff check .
 uv build
 ```
+
+The optional `dev` group adds test and lint tools to the same CUDA runtime;
+there is no competing CPU-only PyTorch installation. Package tests use vLLM
+stubs and do not replace an actual GPU serving check.
+
+Explore other vLLM versions in separate environments or branches. They are not
+part of this verified default, and the plugin currently checks for vLLM 0.26.0.
 
 The implementation lives in `src/limite_vllm`.
 
