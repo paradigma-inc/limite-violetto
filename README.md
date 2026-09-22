@@ -33,8 +33,7 @@ The plugin does not install vLLM or manage the CUDA/PyTorch stack.
 With the plugin installed in the compatible vLLM environment, start Violetto:
 
 ```bash
-HF_TOKEN="$HF_TOKEN" VLLM_PLUGINS=limite \
-  uv run vllm serve paradigma-inc/limite-1b-violetto
+VLLM_PLUGINS=limite uv run vllm serve paradigma-inc/limite-1b-violetto
 ```
 
 For other Limite checkpoints, the general serving command is:
