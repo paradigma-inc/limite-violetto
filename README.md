@@ -46,6 +46,8 @@ From the same directory, start Violetto:
 VLLM_PLUGINS=limite uv run --locked vllm serve paradigma-inc/limite-1b-violetto
 ```
 
+**Sampling settings:** We recommend `temperature=0.6` and `top_p=0.95`. These defaults are included in [`generation_config.json`](https://huggingface.co/paradigma-inc/limite-1b-violetto/blob/main/generation_config.json) and are loaded automatically by the vLLM command above. Explicit request parameters override these defaults, so set both values explicitly if your client supplies its own sampling settings.
+
 For other Limite checkpoints, use:
 
 ```bash
