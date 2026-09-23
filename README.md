@@ -107,14 +107,7 @@ This repository provides the vLLM serving implementation. The checkpoint and tok
 
 Selected models and mathematical benchmarks. Scores are percentages.
 
-| Model | Params. | AIME 2026 | HMMT Feb. 2026 | APEX Shortlist | BeyondAIME |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| **Limite 1B - Violetto** | **1B** | **94.01** | **83.62** | **50.80** | **74.25** |
-| VibeThinker-1.5B | 1.5B | 70.94 | 47.25 | 10.84 | 48.06 |
-| MiniCPM5-2B | 2B | 90.21 | 67.80 | 26.86 | 60.59 |
-| VibeThinker-3B | 3B | 93.85 | 78.98 | 46.41 | 72.00 |
-| Qwen3.5-4B | 4B | 89.66† | 72.86† | 32.51† | 61.25 |
-| Qwen3.5-9B | 9B | 90.42 | 70.36 | 30.72 | 65.56 |
+![Complete Table](assets/complete_table.png)
 
 **Table notes.** † Results sourced from model cards or MathArena; not rerun by our team. Results reflect their respective evaluation configurations; external results may use different protocols.
 
