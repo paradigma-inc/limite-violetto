@@ -20,11 +20,11 @@
 
 **Full installation (recommended).** No extras or manual version selection are required.
 
-**Python 3.12 · vLLM 0.26.0 · PyTorch 2.11.0 (CUDA 13.0) · Transformers 5.6.2**
+**Python 3.12 · vLLM 0.28.0 · PyTorch 2.13.0 (CUDA 13.0) · Transformers 5.6.2**
 
-This is the fully tested default, fixed by `uv.lock`. The package also allows
-newer runtime versions; some later combinations have had light testing but are
-not part of the verified default.
+This is the fully tested default, fixed by `uv.lock`. The plugin's decode
+kernels are written against vLLM 0.28.0 and refuse any other vLLM build at
+startup.
 
 On Linux x86-64 with an NVIDIA GPU and a CUDA 13.0-compatible NVIDIA driver,
 install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run:
@@ -92,6 +92,37 @@ The remaining architecture fields are also required and checked before the infer
 
 Send the mathematical problem as a user message and use the checkpoint's bundled chat template to apply the model's mathematical prompt.
 
+### Serving performance
+
+Version 0.2.0 runs the decode-critical steps as Triton kernels: the attention
+prologue (value embeddings, QK RMS norm, partial rotary) and epilogue (XSA
+correction, output gate), decode attention on the 36 sliding-window layers, and
+the LM head with its fp32 softcap, plus three exact patches to vLLM's seeded
+sampler. The kernels keep every bf16 rounding of the reference graph.
+
+Output tokens per second on one H100 80GB, serving 900 MATH-500 prompts (natural
+output lengths, temperature 0.6, top-p 0.95) with `--max-model-len 131072
+--gpu-memory-utilization 0.9`. Requests carry a per-request seed, as evaluation
+harnesses send, unless the row says otherwise. The two versions were measured
+side by side on one node, with four server starts each:
+
+| Requests in flight | 0.1.0 (vLLM 0.26.0) | 0.2.0 (vLLM 0.28.0) | Speedup |
+|---:|---:|---:|---:|
+| 1 | 322 | 389 | 1.21x |
+| 8 | 1,982 | 2,490 | 1.26x |
+| 32 | 5,925 | 7,526 | 1.27x |
+| 64 | 10,007 | 12,395 | 1.24x |
+| 128 | 15,338 | 18,098 | 1.18x |
+| 320 | 20,538 | 24,928 | 1.21x |
+| 320, requests without a `seed` | 21,693 | 24,667 | 1.14x |
+
+Most of the gain comes from the kernels: version 0.1.0 on vLLM 0.28.0 measures
+21,220 tokens/s at 320 in flight. Quality is unchanged. Against the reference
+implementation, the per-step KL stays within twice the reference's own
+bf16-vs-fp32 floor, and far below the parity gate, up to 16,000 prompt tokens.
+On MATH-500 (500 problems x 4 seeds), 0.2.0 scores 91.7% and 0.1.0 scores
+90.9%; the paired difference is +0.8 points with a standard error of 0.4.
+
 ### Install only the plugin
 
 If you already manage a Python 3.12 environment with vLLM and a compatible
@@ -101,12 +132,14 @@ without resolving dependencies. Activate that environment first so `python` and
 
 ```bash
 uv build --wheel
-python -m pip install --no-deps --force-reinstall dist/limite_vllm-0.1.0-py3-none-any.whl
+python -m pip install --no-deps --force-reinstall dist/limite_vllm-0.2.0-py3-none-any.whl
 VLLM_PLUGINS=limite vllm serve paradigma-inc/limite-1b-violetto
 ```
 
 `--no-deps` preserves the installed runtime dependencies; you are responsible
-for their compatibility. The verified versions are listed above. Building a
+for their compatibility. The environment must provide vLLM 0.28.0: the plugin
+checks the version and the source of the vLLM modules it extends before it
+builds the model, and refuses anything else. Building a
 wheel does not install the runtime. Avoid `uv sync` in this checkout when using
 this path, since it manages the complete runtime described in the quickstart.
 
@@ -184,8 +217,9 @@ The optional `dev` group adds test and lint tools to the same CUDA runtime;
 there is no competing CPU-only PyTorch installation. Package tests use vLLM
 stubs and do not replace an actual GPU serving check.
 
-Explore other vLLM versions in separate environments or branches. They are not
-part of the verified default, but the plugin does not reject them by version.
+The attention backend and the seeded-sampler patches extend vLLM 0.28.0
+internals and check their source digests at startup, so moving to another vLLM
+release means re-porting and re-validating those modules.
 
 The implementation lives in `src/limite_vllm`.
 

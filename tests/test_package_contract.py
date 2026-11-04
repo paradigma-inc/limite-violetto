@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -15,10 +16,18 @@ SOURCE_ROOT = PROJECT_ROOT / "src" / "limite_vllm"
 RUNTIME_FILES = {
     "src/limite_vllm/__init__.py",
     "src/limite_vllm/_components.py",
+    "src/limite_vllm/attention_ops.py",
     "src/limite_vllm/configuration.py",
     "src/limite_vllm/contract.py",
+    "src/limite_vllm/gumbel_masked.py",
+    "src/limite_vllm/local_decode.py",
+    "src/limite_vllm/logits_head.py",
     "src/limite_vllm/modeling.py",
     "src/limite_vllm/register.py",
+    "src/limite_vllm/seeded_sampler.py",
+    "src/limite_vllm/temperature_topp.py",
+    "src/limite_vllm/triton_epilogue.py",
+    "src/limite_vllm/triton_prologue.py",
     "src/limite_vllm/validation.py",
 }
 
@@ -103,6 +112,32 @@ def _config(*, version: int) -> dict[str, object]:
     return raw
 
 
+def _kernel_config() -> dict[str, object]:
+    """A version-5 checkpoint with the released Limite 1B attention shape.
+
+    Only the attention fields the Triton kernels hard-code take their released
+    values; depth, vocabulary and MLP width stay tiny.
+    """
+    raw = _config(version=5)
+    raw.update(
+        {
+            "hidden_size": 1280,
+            "num_attention_heads": 10,
+            "num_key_value_heads": 2,
+            "head_dim": 128,
+            "ve_dim": 128,
+            "ve_stored_heads": 2,
+            "ve_gate_channels": 12,
+            "ve_gate_scale": 2.0,
+            "attn_gate_channels": 128,
+            "xsa": True,
+            "xsa_layers": [0, 1],
+            "xsa_normalize_eps": 1e-4,
+        }
+    )
+    return raw
+
+
 def _install_vllm_import_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provide only the vLLM import surface needed to define the model graph."""
     import torch
@@ -125,9 +160,13 @@ def _install_vllm_import_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
             "vllm.model_executor.model_loader.weight_utils",
             "vllm.model_executor.models",
             "vllm.model_executor.models.utils",
+            "vllm.utils",
+            "vllm.utils.torch_utils",
             "vllm.v1",
             "vllm.v1.attention",
             "vllm.v1.attention.backend",
+            "vllm.v1.attention.backends",
+            "vllm.v1.attention.backends.flash_attn",
         )
     }
     for name, module in modules.items():
@@ -138,8 +177,10 @@ def _install_vllm_import_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
             "vllm.model_executor.layers",
             "vllm.model_executor.model_loader",
             "vllm.model_executor.models",
+            "vllm.utils",
             "vllm.v1",
             "vllm.v1.attention",
+            "vllm.v1.attention.backends",
         }:
             module.__path__ = []  # type: ignore[attr-defined]
 
@@ -185,6 +226,15 @@ def _install_vllm_import_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
     modules["vllm.v1.attention.backend"].AttentionType = SimpleNamespace(
         DECODER="decoder"
     )
+    # Defining the graph registers the attention custom ops and selects the
+    # sliding-window decode backend; neither runs here.
+    modules["vllm.utils.torch_utils"].direct_register_custom_op = (
+        lambda *_args, **_kwargs: None
+    )
+    flash_attn = modules["vllm.v1.attention.backends.flash_attn"]
+    flash_attn.FlashAttentionBackend = type("FlashAttentionBackend", (), {})
+    flash_attn.FlashAttentionImpl = type("FlashAttentionImpl", (), {})
+    flash_attn.__file__ = __file__
     for name, module in modules.items():
         monkeypatch.setitem(sys.modules, name, module)
 
@@ -206,8 +256,8 @@ def test_public_identity_and_entry_point() -> None:
     assert metadata["project"]["name"] == "limite-vllm"
     assert metadata["project"]["requires-python"] == "~=3.12.0"
     assert set(metadata["project"]["dependencies"]) == {
-        "vllm>=0.26.0",
-        "torch>=2.11.0",
+        "vllm==0.28.0",
+        "torch>=2.13.0",
         "transformers>=5.6.2",
     }
     assert metadata["project"]["entry-points"]["vllm.general_plugins"] == {
@@ -233,16 +283,21 @@ def test_default_lock_installs_the_cuda_runtime() -> None:
     }
     torch_packages = [p for p in lock["package"] if p["name"] == "torch"]
     assert len(torch_packages) == 1
-    assert torch_packages[0]["version"] == "2.11.0+cu130"
+    assert torch_packages[0]["version"] == "2.13.0+cu130"
     assert torch_packages[0]["source"] == {
         "registry": "https://download.pytorch.org/whl/cu130"
     }
     vllm_packages = [p for p in lock["package"] if p["name"] == "vllm"]
-    assert len(vllm_packages) == 1
-    assert vllm_packages[0]["version"] == "0.26.0"
+    linux = [p for p in vllm_packages if "url" in p["source"]]
+    assert len(linux) == 1
+    assert linux[0]["version"] == "0.28.0+cu129"
+    assert linux[0]["source"]["url"].endswith(
+        "/v0.28.0/vllm-0.28.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl"
+    )
 
 
 def test_plugin_registration_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("triton")
     _install_vllm_import_stubs(monkeypatch)
 
     class Registry:
@@ -275,7 +330,7 @@ def test_configuration_is_self_contained_and_uses_limite_identity() -> None:
     from limite_vllm.configuration import LimiteConfig
     from limite_vllm.validation import validate
 
-    config = LimiteConfig(**_config(version=4))
+    config = LimiteConfig(**_kernel_config())
     assert config.model_type == "limite"
     assert config.architectures == ["LimiteForCausalLM"]
     assert config.sliding_window == 5
@@ -284,13 +339,62 @@ def test_configuration_is_self_contained_and_uses_limite_identity() -> None:
     validate(config)
 
 
-@pytest.mark.parametrize("version", [4, 5])
-def test_supported_configurations_are_admitted(version: int) -> None:
+def test_the_released_attention_shape_is_admitted() -> None:
     from limite_vllm.configuration import LimiteConfig
     from limite_vllm.validation import validate
 
-    config = LimiteConfig(**_config(version=version))
-    validate(config)
+    validate(LimiteConfig(**_kernel_config()))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "field"),
+    [
+        ({"num_attention_heads": 8, "hidden_size": 1024}, "hidden_size"),
+        ({"xsa_layers": [1]}, "xsa_layers"),
+        ({"attn_gate_channels": 2}, "attn_gate_channels"),
+        # The epilogue hard-codes 2 * sigmoid; the configuration already refuses others.
+        ({"attn_gate_scale": 1.0}, r"2 \* sigmoid"),
+        ({"ve_stored_heads": 10}, "ve_stored_heads"),
+    ],
+)
+def test_other_attention_shapes_are_refused(
+    overrides: dict[str, object], field: str
+) -> None:
+    from limite_vllm.configuration import LimiteConfig
+    from limite_vllm.validation import validate
+
+    raw = _kernel_config()
+    raw.update(overrides)
+    with pytest.raises(NotImplementedError, match=field):
+        validate(LimiteConfig(**raw))
+
+
+@pytest.mark.parametrize("version", [4, 5])
+def test_small_fixture_configurations_are_refused(version: int) -> None:
+    from limite_vllm.configuration import LimiteConfig
+    from limite_vllm.validation import validate
+
+    with pytest.raises(NotImplementedError, match="attention kernels"):
+        validate(LimiteConfig(**_config(version=version)))
+
+
+def test_other_vllm_builds_fail_before_the_graph_is_built(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("triton")
+    _install_vllm_import_stubs(monkeypatch)
+    from limite_vllm import local_decode
+
+    monkeypatch.setattr(local_decode, "version", lambda _name: "0.26.0")
+    with pytest.raises(RuntimeError, match="requires vLLM 0.28.0, got 0.26.0"):
+        local_decode.require_runtime()
+
+    edited = tmp_path / "flash_attn.py"
+    edited.write_text("# a different FlashAttention backend\n")
+    monkeypatch.setattr(local_decode, "version", lambda _name: "0.28.0+cu129")
+    monkeypatch.setattr(local_decode._flash_attn, "__file__", str(edited))
+    with pytest.raises(RuntimeError, match="differs from the verified 0.28.0 source"):
+        local_decode.require_runtime()
 
 
 def test_lint_configuration_checks_the_complete_runtime() -> None:
@@ -301,10 +405,8 @@ def test_lint_configuration_checks_the_complete_runtime() -> None:
 
 def test_repository_contains_no_legacy_or_cross_package_imports() -> None:
     forbidden_names = ("gui" + "do", "gm" + "pt", "gm" + "_pt")
-    forbidden_imports = (
-        "from limite_" + "model",
-        "import limite_" + "model",
-    )
+    # The legacy package's name exactly: `limite_evals.limite_models` is not it.
+    forbidden_import = re.compile(r"\b(?:from|import) limite_" + "model" + r"\b")
     excluded_parts = {
         ".git",
         ".hub-staging",
@@ -322,7 +424,9 @@ def test_repository_contains_no_legacy_or_cross_package_imports() -> None:
             content = path.read_text().lower()
         except UnicodeDecodeError:
             continue
-        if any(name in content for name in forbidden_names + forbidden_imports):
+        if any(name in content for name in forbidden_names) or forbidden_import.search(
+            content
+        ):
             offenders.append(str(path.relative_to(PROJECT_ROOT)))
     assert offenders == []
 
@@ -402,18 +506,22 @@ def _full_source_inventory(
     return sorted(sources.items()), expected
 
 
-@pytest.mark.parametrize("version", [4, 5])
 def test_full_reload_restores_raw_before_folding_once(
-    monkeypatch: pytest.MonkeyPatch, version: int
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    pytest.importorskip("triton")
     import torch
 
     from limite_vllm.configuration import LimiteConfig
 
     _install_vllm_import_stubs(monkeypatch)
+    from limite_vllm import local_decode, seeded_sampler
     from limite_vllm.modeling import LimiteForCausalLM
 
-    config = LimiteConfig(**_config(version=version))
+    # Both change vLLM for the whole process and need its real runtime.
+    monkeypatch.setattr(local_decode, "require_runtime", lambda: None)
+    monkeypatch.setattr(seeded_sampler, "apply", lambda: None)
+    config = LimiteConfig(**_kernel_config())
     vllm_config = SimpleNamespace(
         model_config=SimpleNamespace(hf_config=config),
         cache_config=SimpleNamespace(sliding_window=None),
