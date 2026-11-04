@@ -1,7 +1,20 @@
 """The single supported Limite execution graph for vLLM.
 
 QKV and SwiGLU projections are fused, and projection scalars are folded once
-after every exhaustive weight load.
+after every exhaustive weight load. The decode-critical steps run as Triton
+kernels that keep every bf16 rounding of the torch graph in ``_components``:
+
+* the attention prologue and epilogue (:mod:`limite_vllm.attention_ops`);
+* pure-decode attention on the sliding-window layers
+  (:mod:`limite_vllm.local_decode`);
+* the LM head GEMM with its fp32 sigmoid softcap
+  (:mod:`limite_vllm.logits_head`);
+* three exact patches to vLLM's seeded sampler path
+  (:mod:`limite_vllm.seeded_sampler`), checked against vLLM's own sampler at
+  engine start.
+
+The kernels hard-code the released Limite 1B attention shape, which
+:func:`limite_vllm.validation.validate` enforces, and run on vLLM 0.28.0 only.
 """
 
 from __future__ import annotations
@@ -21,6 +34,10 @@ from vllm.model_executor.model_loader.weight_utils import default_weight_loader
 from vllm.model_executor.models.utils import maybe_prefix
 from vllm.v1.attention.backend import AttentionType
 
+# Imported for its side effect: it registers the torch.ops.limite.* kernels.
+from limite_vllm import attention_ops  # noqa: F401
+from limite_vllm import local_decode, seeded_sampler
+from limite_vllm.logits_head import logits as fused_logits
 from limite_vllm.validation import validate as validate_config
 from limite_vllm._components import (
     _AttentionBase,
@@ -103,6 +120,11 @@ class LimiteAttention(_AttentionBase):
                 self.attn_gate_channels,
                 dtype=torch.float32,
             )
+        if self.qkv_proj.weight.dtype != torch.bfloat16:
+            raise NotImplementedError(
+                "Limite's attention kernels reproduce the bf16 graph's roundings and "
+                f"serve only bfloat16, not {self.qkv_proj.weight.dtype}."
+            )
         self.attn = Attention(
             self.num_heads,
             self.head_dim,
@@ -113,6 +135,9 @@ class LimiteAttention(_AttentionBase):
             per_layer_sliding_window=_per_layer_window(config, layer_idx),
             attn_type=AttentionType.DECODER,
             prefix=f"{prefix}.attn",
+            # Sliding-window layers decode with the Triton kernel; global layers
+            # keep vLLM's choice.
+            attn_backend=local_decode.backend_for(self.is_global),
         )
 
     def forward(
@@ -124,34 +149,30 @@ class LimiteAttention(_AttentionBase):
         attn_residual: torch.Tensor | None = None,
     ) -> torch.Tensor:
         qkv = F.linear(attn_in, self.qkv_proj.weight)
-        q, k, v = qkv.split((self.q_size, self.kv_size, self.kv_size), dim=-1)
-        q = q.view(-1, self.num_heads, self.head_dim)
-        k = k.view(-1, self.num_kv_heads, self.head_dim)
-        v = v.view(-1, self.num_kv_heads, self.head_dim)
-
         if self.uses_ve:
-            v = self._apply_value_embeddings(input_ids, attn_in, v, value_embeds)
-
-        q, k = rms_norm(q), rms_norm(k)
-        if self.uses_rope:
-            q, k = self.rotary(q, k, positions)
+            qk, v = torch.ops.limite.attention_prologue_ve(
+                qkv,
+                attn_in,
+                positions,
+                input_ids,
+                value_embeds.weight,
+                self.ve_gate,
+                self.rotary.freq,
+                self.uses_rope,
+            )
+        else:
+            qk = torch.ops.limite.attention_prologue(
+                qkv, positions, self.rotary.freq, self.uses_rope
+            )
+            v = qkv[:, self.q_size + self.kv_size :].view(
+                -1, self.num_kv_heads, self.head_dim
+            )
+        q, k = qk[:, : self.num_heads], qk[:, self.num_heads :]
 
         y = self.attn(q, k, v).view(-1, self.num_heads, self.head_dim)
-        if self.uses_xsa:
-            vn = F.normalize(self._expand_kv(v).float(), dim=-1, eps=self.xsa_eps)
-            proj = (y.float() * vn).sum(-1, keepdim=True)
-            alpha = torch.tanh(self.xsa_alpha.float()).view(1, self.num_heads, 1)
-            y = y - (alpha * proj * vn).to(y.dtype)
-        if self.attn_gate_channels:
-            gate = self.attn_gate_scale * torch.sigmoid(
-                F.linear(
-                    attn_in[..., : self.attn_gate_channels],
-                    self.attn_gate.to(attn_in.dtype),
-                )
-            )
-            y = y * gate.to(y.dtype).unsqueeze(-1)
-
-        y = y.contiguous().view(-1, self.hidden_size)
+        y = torch.ops.limite.attention_epilogue(
+            y, v, attn_in, self.xsa_alpha, self.attn_gate
+        )
         return F.linear(y, self.o_proj.weight)
 
     @torch.no_grad()
@@ -318,6 +339,12 @@ class LimiteForCausalLM(nn.Module):
             raise NotImplementedError("Limite modeling supports data parallelism only.")
         config = vllm_config.model_config.hf_config
         self.config = config
+        # The checkpoint is checked first: the runtime check and the sampler
+        # patch below change vLLM for the whole process. vLLM builds attention
+        # metadata builders and the sampler after the model, so both apply.
+        validate_config(config)
+        local_decode.require_runtime()
+        seeded_sampler.apply()
         self.model = LimiteModel(
             vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model")
         )
@@ -357,6 +384,23 @@ class LimiteForCausalLM(nn.Module):
         """Compute the softcapped head at the configured precision."""
         weight = self.lm_head.weight
         if self.head_precision_mode == "oracle_exact":
+            if (
+                hidden_states.is_cuda
+                and hidden_states.dtype == torch.bfloat16
+                and weight.dtype == torch.bfloat16
+                and hidden_states.device == weight.device
+                and hidden_states.ndim == 2
+                and hidden_states.shape[0] > 1
+                and hidden_states.shape[1] == 1280
+                and tuple(weight.shape) == (151680, 1280)
+                and hidden_states.is_contiguous()
+                and weight.is_contiguous()
+                and (self.softcap_a, self.softcap_b, self.softcap_c)
+                == (23.0, 5.0, 7.5)
+            ):
+                # The kernel rounds the completed GEMM to bf16, then applies the
+                # softcap in fp32. One row and other shapes stay below.
+                return fused_logits(hidden_states, weight)
             raw = F.linear(hidden_states, weight.to(hidden_states.dtype))
         elif hidden_states.is_cuda and hidden_states.dtype in (
             torch.bfloat16,

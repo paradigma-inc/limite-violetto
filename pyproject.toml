@@ -1,14 +1,16 @@
 [project]
 name = "limite-vllm"
-version = "0.1.0"
+version = "0.2.0"
 description = "Optimized out-of-tree vLLM implementation of Limite"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = "~=3.12.0"
 dependencies = [
-    "torch>=2.11.0",
+    "torch>=2.13.0",
     "transformers>=5.6.2",
-    "vllm>=0.26.0",
+    # The attention backend and the seeded-sampler patches subclass vLLM 0.28.0
+    # internals and check their source digests at startup.
+    "vllm==0.28.0",
 ]
 
 [dependency-groups]
@@ -37,6 +39,10 @@ default-groups = []
 
 [tool.uv.sources]
 torch = { index = "pytorch-cu130" }
+# The CUDA 12.9 build every published speed and parity number was measured on.
+vllm = [
+    { url = "https://github.com/vllm-project/vllm/releases/download/v0.28.0/vllm-0.28.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
