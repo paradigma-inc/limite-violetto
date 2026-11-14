@@ -223,6 +223,17 @@ release means re-porting and re-validating those modules.
 
 The implementation lives in `src/limite_vllm`.
 
+### Experimental Belluxx drafting on V2
+
+An opt-in adapter combines the released Belluxx FP32 drafter with the native
+vLLM V2 runner. Both workload profiles share an accepted-token K/V projection
+cache: five proposals for single-stream requests and three for multistream
+serving. The default serving path is unchanged. See
+[`docs/belluxx-v2.md`](docs/belluxx-v2.md) for pinned inputs, restrictions,
+serving commands, GPU contract tests and matched full-context AIME comparisons.
+The combined implementation's performance and quality must be measured before
+release; earlier results from separate prototypes are not combined results.
+
 ## Code license
 
 The serving code in this repository is licensed under [Apache-2.0](https://github.com/paradigma-inc/limite-violetto/blob/main/LICENSE).
