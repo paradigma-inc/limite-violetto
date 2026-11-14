@@ -35,6 +35,12 @@ def validate_config(config) -> None:
         raise ValueError("Belluxx supports 1..7 draft tokens")
     if config.cache_config.enable_prefix_caching:
         raise ValueError("Belluxx V2 requires prefix caching disabled")
+    transfer = config.kv_transfer_config
+    if transfer is not None and transfer.kv_connector is not None:
+        raise ValueError(
+            "Belluxx V2 requires KV transfer disabled; external KV caches "
+            "do not restore drafter feature history"
+        )
     parallel = config.parallel_config
     if parallel.tensor_parallel_size != 1 or parallel.pipeline_parallel_size != 1:
         raise ValueError("Belluxx V2 requires TP=PP=1")

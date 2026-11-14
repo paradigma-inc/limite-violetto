@@ -24,6 +24,7 @@ def config():
             rejection_sample_method="standard",
         ),
         cache_config=NS(enable_prefix_caching=False),
+        kv_transfer_config=None,
         parallel_config=NS(tensor_parallel_size=1, pipeline_parallel_size=1),
         scheduler_config=NS(async_scheduling=None),
     )
@@ -85,3 +86,17 @@ def test_reject_target_precision_change():
     candidate.model_config.dtype = "torch.float16"
     with pytest.raises(ValueError, match="BF16"):
         API["validate_config"](candidate)
+
+
+@pytest.mark.parametrize("role", ["kv_producer", "kv_consumer", "kv_both"])
+def test_reject_external_kv_even_without_local_prefix_caching(role):
+    candidate = config()
+    candidate.kv_transfer_config = NS(kv_connector="ExampleConnector", kv_role=role)
+    with pytest.raises(ValueError, match="KV transfer.*feature history"):
+        API["validate_config"](candidate)
+
+
+def test_allow_inactive_kv_transfer_config():
+    candidate = config()
+    candidate.kv_transfer_config = NS(kv_connector=None, kv_role=None)
+    API["validate_config"](candidate)

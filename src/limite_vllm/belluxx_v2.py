@@ -366,10 +366,16 @@ def install():
             result = [x for x in result if x != "speculative method 'custom_class'"]
         return result
 
-    config_cls._get_v2_model_runner_unsupported_features = unsupported
     # Preserve every other async compatibility check verbatim. Only this exact
     # class may join the already-supported device-resident proposer methods.
-    source = textwrap.dedent(inspect.getsource(config_cls.__post_init__))
+    try:
+        source = textwrap.dedent(inspect.getsource(config_cls.__post_init__))
+    except (OSError, TypeError) as exc:
+        raise RuntimeError(
+            "Belluxx V2 cannot inspect the vLLM configuration hooks; "
+            "another adapter may have patched them. Start a fresh process "
+            "with VLLM_PLUGINS=limite"
+        ) from exc
     needle = "self.speculative_config.method not in get_args(EagleModelTypes)"
     if source.count(needle) != 2:
         raise RuntimeError("Belluxx V2 async compatibility checks changed")
@@ -380,6 +386,8 @@ def install():
         ),
         namespace,
     )
+    # Validate and compile the replacement before changing any runtime hooks.
+    config_cls._get_v2_model_runner_unsupported_features = unsupported
     config_cls.__post_init__ = namespace["__post_init__"]
     original_eagle = spec_module.SpeculativeConfig.use_eagle
     spec_module.SpeculativeConfig.use_eagle = lambda self: (
