@@ -16,6 +16,10 @@ SOURCE_ROOT = PROJECT_ROOT / "src" / "limite_vllm"
 RUNTIME_FILES = {
     "src/limite_vllm/__init__.py",
     "src/limite_vllm/_components.py",
+    "src/limite_vllm/belluxx.py",
+    "src/limite_vllm/belluxx_cache.py",
+    "src/limite_vllm/belluxx_config.py",
+    "src/limite_vllm/belluxx_v2.py",
     "src/limite_vllm/attention_ops.py",
     "src/limite_vllm/configuration.py",
     "src/limite_vllm/contract.py",
