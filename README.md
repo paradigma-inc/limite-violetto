@@ -225,8 +225,9 @@ The implementation lives in `src/limite_vllm`.
 
 ### Experimental Belluxx drafting on V2
 
-An opt-in adapter combines the released Belluxx FP32 drafter with the native
-vLLM V2 runner. Both workload profiles share an accepted-token K/V projection
+An opt-in adapter combines the released FP32 drafter created by
+[Belluxx](https://github.com/Belluxx) with the native vLLM V2 runner.
+Both workload profiles share an accepted-token K/V projection
 cache: five proposals for single-stream requests and three for multistream
 serving. The default serving path is unchanged. See
 [`docs/belluxx-v2.md`](docs/belluxx-v2.md) for pinned inputs, restrictions,
@@ -234,9 +235,20 @@ serving commands, GPU contract tests and matched full-context AIME comparisons.
 Measurements apply to their exact combined source revision and workload;
 earlier results from separate prototypes are not combined results.
 
+## Acknowledgements
+
+We thank [Belluxx](https://github.com/Belluxx) for creating and releasing the
+[Limite Violetto drafter](https://huggingface.co/Belluxx/limite-1b-violetto-drafter)
+and the original [Silicon Violetto](https://github.com/Belluxx/silicon-violetto)
+implementation. The V2 drafting integration builds on this work and adapts its
+MIT-licensed reference-forward formulas. Belluxx's copyright and permission
+notice are preserved in [`licenses/belluxx-MIT.txt`](licenses/belluxx-MIT.txt).
+
 ## Code license
 
 The serving code in this repository is licensed under [Apache-2.0](https://github.com/paradigma-inc/limite-violetto/blob/main/LICENSE).
+The formulas adapted from Belluxx's implementation retain their
+[MIT license](licenses/belluxx-MIT.txt).
 
 ## Citation
 
