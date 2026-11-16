@@ -58,9 +58,11 @@ that patch the same vLLM hooks cannot be composed in the same process; use a
 fresh process when changing plugin selection. The weights directory must contain
 `model.safetensors`; the source directory must contain `tools/spec/drafter.py`.
 
-The reference loader verifies `tools/spec/drafter.py` before importing it. The
-adapter's reference-forward formulas are adapted from that MIT-licensed source;
-the attribution and permission notice are in [`licenses/belluxx-MIT.txt`](../licenses/belluxx-MIT.txt).
+The reference loader verifies Belluxx's original `tools/spec/drafter.py` before
+importing it. Paradigma developed the CUDA/vLLM integration, adaptations, and
+optimizations under Apache-2.0. The original MIT copyright and permission notice
+is preserved for incorporated upstream material in
+[`licenses/belluxx-MIT.txt`](../licenses/belluxx-MIT.txt).
 The drafter checkpoint retains its upstream terms.
 
 Single stream:

@@ -240,15 +240,23 @@ earlier results from separate prototypes are not combined results.
 We thank [Belluxx](https://github.com/Belluxx) for creating and releasing the
 [Limite Violetto drafter](https://huggingface.co/Belluxx/limite-1b-violetto-drafter)
 and the original [Silicon Violetto](https://github.com/Belluxx/silicon-violetto)
-implementation. The V2 drafting integration builds on this work and adapts its
-MIT-licensed reference-forward formulas. Belluxx's copyright and permission
-notice are preserved in [`licenses/belluxx-MIT.txt`](licenses/belluxx-MIT.txt).
+implementation. Paradigma developed the CUDA/vLLM integration, adaptations,
+and optimizations that make this drafter available in the native V2 runner.
 
-## Code license
+## Code license and attribution
 
-The serving code in this repository is licensed under [Apache-2.0](https://github.com/paradigma-inc/limite-violetto/blob/main/LICENSE).
-The formulas adapted from Belluxx's implementation retain their
-[MIT license](licenses/belluxx-MIT.txt).
+Limite Violetto's serving runtime and the CUDA/vLLM integration, adaptations,
+and optimizations developed by Paradigma are licensed under
+[Apache-2.0](LICENSE).
+
+Belluxx created the original drafter, released its
+[checkpoint on Hugging Face](https://huggingface.co/Belluxx/limite-1b-violetto-drafter),
+and provided the original reference implementation in
+[Silicon Violetto](https://github.com/Belluxx/silicon-violetto). His copyright
+and license notices are preserved for upstream material incorporated into this
+repository; see [`licenses/belluxx-MIT.txt`](licenses/belluxx-MIT.txt).
+Paradigma's original additions and modifications remain attributed to Paradigma
+and licensed under Apache-2.0.
 
 ## Citation
 

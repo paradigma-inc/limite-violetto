@@ -1,3 +1,14 @@
+Third-party notice: Belluxx drafter reference implementation
+
+Source: https://github.com/Belluxx/silicon-violetto
+
+The notice below covers Belluxx's original drafter implementation and upstream
+material incorporated from it. Paradigma's original additions and modifications,
+including the CUDA/vLLM integration, adaptations, and optimizations, are
+attributed to Paradigma and licensed under Apache-2.0; see the root LICENSE.
+
+Original upstream notice (unchanged):
+
 MIT License
 
 Copyright (c) 2026 Belluxx
