@@ -79,9 +79,7 @@ class LimiteAttention(_AttentionBase):
         self.head_dim = int(config.head_dim)
         self.gqa_groups = self.num_heads // self.num_kv_heads
         self.ve_dim = int(config.ve_dim)
-        self.ve_stored_heads = int(
-            getattr(config, "ve_stored_heads", self.num_heads)
-        )
+        self.ve_stored_heads = int(getattr(config, "ve_stored_heads", self.num_heads))
         self.ve_gate_scale = float(config.ve_gate_scale)
         self.attn_gate_channels = int(config.attn_gate_channels)
         self.attn_gate_scale = float(getattr(config, "attn_gate_scale", 2.0))
@@ -295,12 +293,14 @@ class LimiteModel(nn.Module):
             index for taps in self.mudd_tap_idx.values() for index in taps
         }
         self.final_softcap = float(config.final_softcap)
+        self.aux_hidden_state_layers: tuple[int, ...] = ()
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return self.embed_tokens(input_ids)
 
-    def forward(self, input_ids: torch.Tensor, positions: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, positions: torch.Tensor):
         x = rms_norm(self.embed_tokens(input_ids))
+        auxiliary = []
         history: dict[int, torch.Tensor] = {0: x} if self.mudd_tap_idx else {}
         for index, layer in enumerate(self.layers):
             if index in self.mudd_tap_idx:
@@ -324,18 +324,36 @@ class LimiteModel(nn.Module):
             )
             if index + 1 in self.retained_history:
                 history[index + 1] = x
+            if index in self.aux_hidden_state_layers:
+                auxiliary.append(x)
         if self.final_softcap > 0:
             cap = self.final_softcap
             x = cap * torch.tanh(x / cap)
-        return rms_norm(x)
+        output = rms_norm(x)
+        return (output, auxiliary) if self.aux_hidden_state_layers else output
 
 
 class LimiteForCausalLM(nn.Module):
     """vLLM entry point for ``architectures: ["LimiteForCausalLM"]``."""
 
+    supports_eagle3 = True
+    has_own_lm_head = False
+    has_own_embed_tokens = False
+
+    def get_eagle3_default_aux_hidden_state_layers(self) -> tuple[int, ...]:
+        return (35, 47)
+
+    def set_aux_hidden_state_layers(self, layers: tuple[int, ...]) -> None:
+        if tuple(layers) != (35, 47):
+            raise ValueError("The Belluxx integration requires output taps 35 and 47")
+        self.model.aux_hidden_state_layers = tuple(layers)
+
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         nn.Module.__init__(self)
-        if get_tensor_model_parallel_world_size() != 1 or get_pp_group().world_size != 1:
+        if (
+            get_tensor_model_parallel_world_size() != 1
+            or get_pp_group().world_size != 1
+        ):
             raise NotImplementedError("Limite modeling supports data parallelism only.")
         config = vllm_config.model_config.hf_config
         self.config = config
@@ -395,8 +413,7 @@ class LimiteForCausalLM(nn.Module):
                 and tuple(weight.shape) == (151680, 1280)
                 and hidden_states.is_contiguous()
                 and weight.is_contiguous()
-                and (self.softcap_a, self.softcap_b, self.softcap_c)
-                == (23.0, 5.0, 7.5)
+                and (self.softcap_a, self.softcap_b, self.softcap_c) == (23.0, 5.0, 7.5)
             ):
                 # The kernel rounds the completed GEMM to bf16, then applies the
                 # softcap in fp32. One row and other shapes stay below.

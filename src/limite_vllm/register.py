@@ -16,11 +16,19 @@ from limite_vllm.contract import ARCHITECTURE, MODEL_TYPE
 
 
 def register() -> None:
+    import os
     from transformers import AutoConfig
     from vllm import ModelRegistry
 
     from limite_vllm.configuration import LimiteConfig
     from limite_vllm.modeling import LimiteForCausalLM
+
+    if os.environ.get("LIMITE_BELLUXX_WEIGHTS"):
+        if os.environ.get("VLLM_USE_V2_MODEL_RUNNER") != "1":
+            raise ValueError("Belluxx requires VLLM_USE_V2_MODEL_RUNNER=1")
+        from limite_vllm.belluxx_v2 import install
+
+        install()
 
     AutoConfig.register(MODEL_TYPE, LimiteConfig, exist_ok=True)
     if ARCHITECTURE in ModelRegistry.get_supported_archs():

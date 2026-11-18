@@ -1,0 +1,5 @@
+{
+  "method": "custom_class",
+  "model": "limite_vllm.belluxx_v2.BelluxxSpeculator",
+  "num_speculative_tokens": 5
+}
