@@ -1,0 +1,46 @@
+cff-version: 1.2.0
+message: "If you use Limite, please cite the technical report."
+title: "Limite 1B - Violetto"
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/paradigma-inc/limite-violetto"
+authors:
+  - family-names: Prignano
+    given-names: Mario
+  - family-names: Cirillo
+    given-names: Gabriele
+  - family-names: Morosini
+    given-names: Alessio
+  - family-names: Cerovaz
+    given-names: Luca
+  - family-names: Bartolocci
+    given-names: Alessandro
+  - family-names: Rodolà
+    given-names: Emanuele
+  - family-names: Starace
+    given-names: Giulio
+  - family-names: Pappone
+    given-names: Francesco
+preferred-citation:
+  type: report
+  title: "Limite 1B - Violetto: Technical Report"
+  authors:
+    - family-names: Prignano
+      given-names: Mario
+    - family-names: Cirillo
+      given-names: Gabriele
+    - family-names: Morosini
+      given-names: Alessio
+    - family-names: Cerovaz
+      given-names: Luca
+    - family-names: Bartolocci
+      given-names: Alessandro
+    - family-names: Rodolà
+      given-names: Emanuele
+    - family-names: Starace
+      given-names: Giulio
+    - family-names: Pappone
+      given-names: Francesco
+  year: 2026
+  doi: "10.48550/arXiv.2611.21646"
+  url: "https://arxiv.org/abs/2611.21646"

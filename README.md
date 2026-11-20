@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://huggingface.co/paradigma-inc/limite-1b-violetto">Model weights</a> ·
+  <a href="https://arxiv.org/abs/2611.21646">Technical report</a> ·
   <a href="https://paradigma.inc/blog/limite-1b-violetto/">Blog</a> ·
   <a href="#quickstart">Quickstart</a>
 </p>
@@ -260,4 +261,20 @@ and licensed under Apache-2.0.
 
 ## Citation
 
-Refer to the citation published in the [release blog](https://paradigma.inc/blog/limite-1b-violetto/).
+If you use Limite, please cite the [technical report](https://arxiv.org/abs/2611.21646):
+
+```bibtex
+@misc{paradigma2026limite,
+  title         = {{Limite 1B - Violetto: Technical Report}},
+  author        = {Prignano, Mario and Cirillo, Gabriele and
+                   Morosini, Alessio and Cerovaz, Luca and
+                   Bartolocci, Alessandro and Rodol{\`a}, Emanuele and
+                   Starace, Giulio and Pappone, Francesco},
+  year          = {2026},
+  eprint        = {2611.21646},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  doi           = {10.48550/arXiv.2611.21646},
+  url           = {https://arxiv.org/abs/2611.21646}
+}
+```
